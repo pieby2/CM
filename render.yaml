@@ -5,7 +5,7 @@ databases:
     plan: free
 
 services:
-  - type: redis
+  - type: keyvalue
     name: cue-math-redis
     plan: free
     ipAllowList: []
@@ -26,7 +26,7 @@ services:
           property: connectionString
       - key: CUE_REDIS_URL
         fromService:
-          type: redis
+          type: keyvalue
           name: cue-math-redis
           property: connectionString
       - key: CUE_HLR_SERVICE_URL
@@ -47,8 +47,9 @@ services:
       - key: PYTHON_VERSION
         value: "3.11.0"
 
-  - type: static
+  - type: web
     name: cue-math-web
+    env: static
     rootDir: apps/web
     buildCommand: "npm install && npm run build"
     staticPublishPath: "dist"
