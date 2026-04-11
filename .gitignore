@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+env/
+.env
+
+# Node
+node_modules/
+dist/
+.next/
+
+# IDE
+.vscode/
+
+# Runtime artifacts
+storage/
+*.log
