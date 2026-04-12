@@ -1224,3 +1224,26 @@ button {
 .justify-between { justify-content: space-between; }
 .hidden { display: none !important; }
 
+/* ── Cloze Blank Styles ──────────────────────────────── */
+.cloze-hidden {
+  display: inline-block;
+  background-color: var(--bg-surface);
+  color: transparent;
+  padding: 0 0.5rem;
+  border-bottom: 2px solid var(--accent-primary);
+  border-radius: 4px;
+  line-height: inherit;
+  font-weight: 600;
+  cursor: default;
+}
+
+.cloze-revealed {
+  display: inline-block;
+  background-color: var(--accent-primary-glow);
+  color: var(--accent-primary);
+  padding: 0 0.5rem;
+  border-bottom: 2px solid var(--accent-primary);
+  border-radius: 4px;
+  line-height: inherit;
+  font-weight: 600;
+}

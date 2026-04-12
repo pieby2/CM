@@ -11,7 +11,7 @@ from app.config import settings
 
 logger = logging.getLogger("cue.card_generator")
 
-VALID_CARD_TYPES = {"definition", "relationship", "worked_example", "edge_case"}
+VALID_CARD_TYPES = {"definition", "relationship", "worked_example", "edge_case", "cloze"}
 
 SYSTEM_PROMPT = """\
 You are an expert educator who creates high-quality flashcards from study material.
@@ -22,26 +22,28 @@ Create a MIX of card types:
 - "relationship": How concepts connect, cause-and-effect, comparisons
 - "worked_example": Step-by-step problem solutions the student should recall
 - "edge_case": Tricky exceptions, boundary conditions, common mistakes
+- "cloze": Fill-in-the-blank statements. Use {{blank}} notation on BOTH front and back if needed. The front should have `{{blank}}`, and the back should have the answer like `{{Answer}}`. Example: Front: `The capital of France is {{...}}`, Back: `The capital of France is {{Paris}}`.
 
 Guidelines:
-- Write the FRONT as a clear, specific question.
+- Write the FRONT as a clear, specific question or a cloze statement.
 - Write the BACK as a concise, complete answer.
 - Each card should test ONE concept or fact.
 - Cards should feel like they were written by a great teacher.
 - Identify the primary concept each card tests (1-3 words).
 - Cover the material COMPREHENSIVELY — don't just skim the surface.
+- If images are provided, create cards that refer to the images where appropriate.
 
 Respond ONLY with a JSON array. Each element must have exactly these keys:
   "front": string,
   "back": string,
-  "type": one of "definition" | "relationship" | "worked_example" | "edge_case",
+  "type": one of "definition" | "relationship" | "worked_example" | "edge_case" | "cloze",
   "concept": string (1-3 word primary concept name),
   "difficulty": float between 0.5 and 3.0 (1.0 = average)
 
 Example output:
 [
   {"front": "What is the discriminant of ax² + bx + c?", "back": "The discriminant is b² − 4ac. It determines the nature and number of roots.", "type": "definition", "concept": "discriminant", "difficulty": 1.0},
-  {"front": "If b² − 4ac < 0, what can you say about the roots?", "back": "The equation has no real roots; both roots are complex conjugates.", "type": "edge_case", "concept": "complex roots", "difficulty": 1.5}
+  {"front": "The typical output of the softmax function sums to {{...}}.", "back": "The typical output of the softmax function sums to {{1}}.", "type": "cloze", "concept": "softmax", "difficulty": 1.2}
 ]
 """
 
@@ -89,13 +91,36 @@ def generate_cards_from_section(
         f"{section_content[:6000]}"
     )
 
+    import base64
+    from pathlib import Path
+
+    model_to_use = settings.groq_model
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+    ]
+
+    # Detect images in markdown
+    image_paths = re.findall(r'!\[.*?\]\(/api/storage/(.*?)/(.*?)\)', section_content)
+    if image_paths:
+        model_to_use = "llama-3.2-90b-vision-preview"
+        user_content = [{"type": "text", "text": user_prompt}]
+        for job_id, img_name in image_paths[:3]:  # limit to 3 images to avoid payload size errors
+            local_img_path = Path(settings.storage_path) / job_id / img_name
+            if local_img_path.exists():
+                with open(local_img_path, "rb") as f:
+                    b64_img = base64.b64encode(f.read()).decode('utf-8')
+                    user_content.append({
+                        "type": "image_url", 
+                        "image_url": {"url": f"data:image/png;base64,{b64_img}"}
+                    })
+        messages.append({"role": "user", "content": user_content})
+    else:
+        messages.append({"role": "user", "content": user_prompt})
+
     try:
         response = client.chat.completions.create(
-            model=settings.groq_model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt}
-            ],
+            model=model_to_use,
+            messages=messages,
             temperature=settings.groq_temperature,
         )
         raw_text = response.choices[0].message.content.strip()
@@ -217,4 +242,39 @@ def _parse_cards(raw_text: str) -> list[GeneratedCard]:
 
     return cards
 
+
+def generate_mnemonic(front: str, back: str, api_key: str | None = None) -> str:
+    """Generate a mnemonic or ELI5 analogy for a given card."""
+    resolved_key = api_key or settings.groq_api_key
+    if not resolved_key:
+        raise CardGenerationError("Groq API key not configured.")
+
+    try:
+        from groq import Groq
+    except ImportError as exc:
+        raise CardGenerationError("groq package not installed.") from exc
+
+    client = Groq(api_key=resolved_key)
+
+    sys_prompt = (
+        "You are a creative tutor. Your goal is to help a student easily memorize a tricky flashcard.\n"
+        "Generate a short, memorable mnemonic device, acronym, or a brilliant 'Explain Like I'm 5' analogy.\n"
+        "Keep it under 3 sentences. Be extremely concise. Don't use markdown styling like headers."
+    )
+
+    user_prompt = f"Flashcard Front (Question): {front}\nFlashcard Back (Answer): {back}\n\nPlease give me a memory trick."
+
+    try:
+        response = client.chat.completions.create(
+            model=settings.groq_model,
+            messages=[
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.8,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as exc:
+        logger.error("Groq API mnemonic generation failed: %s", exc)
+        raise CardGenerationError("Failed to generate mnemonic") from exc
 

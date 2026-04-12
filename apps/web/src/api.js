@@ -181,3 +181,21 @@ export function generateCardsFromImport(jobId, payload = {}, apiKey = null) {
     headers,
   });
 }
+
+// ── Chat & Mnemonics ───────────────────────────────────
+
+export function getCardMnemonic(cardId, apiKey = null) {
+  const headers = {};
+  if (apiKey) headers["X-Groq-Api-Key"] = apiKey;
+  return apiRequest(`/cards/${encodeURIComponent(cardId)}/mnemonic`, { headers });
+}
+
+export function deckChat(deckId, message, apiKey = null) {
+  const headers = {};
+  if (apiKey) headers["X-Groq-Api-Key"] = apiKey;
+  return apiRequest(`/chat/deck/${encodeURIComponent(deckId)}`, {
+    method: "POST",
+    body: JSON.stringify({ message }),
+    headers,
+  });
+}

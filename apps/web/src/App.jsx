@@ -14,13 +14,18 @@ import {
   listDecks,
   processImport,
   uploadPdf,
+  getCardMnemonic,
+  deckChat,
 } from "./api";
+
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
 // ── Constants ──────────────────────────────────────────
 
 const TABS = [
   { key: "review", label: "Review", icon: "⚡" },
   { key: "decks", label: "Decks", icon: "📚" },
+  { key: "chat", label: "Chat", icon: "💬" },
   { key: "import", label: "Import PDF", icon: "📄" },
   { key: "add", label: "Add Card", icon: "✏️" },
 ];
@@ -58,6 +63,13 @@ export default function App() {
   const [flipped, setFlipped] = useState(false);
   const [answerStart, setAnswerStart] = useState(Date.now());
   const [sessionComplete, setSessionComplete] = useState(false);
+  const [mnemonic, setMnemonic] = useState(null);
+  const [loadingMnemonic, setLoadingMnemonic] = useState(false);
+
+  // Chat state
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
 
   // Stats
   const [stats, setStats] = useState(EMPTY_STATS);
@@ -256,6 +268,7 @@ export default function App() {
       setSessionCards(res.items);
       setSessionIndex(0);
       setFlipped(false);
+      setMnemonic(null);
       setAnswerStart(Date.now());
       if (res.items.length === 0) {
         notify("No cards due — you're all caught up! 🎉");
@@ -283,6 +296,7 @@ export default function App() {
       const nextIdx = sessionIndex + 1;
       setSessionIndex(nextIdx);
       setFlipped(false);
+      setMnemonic(null);
       setAnswerStart(Date.now());
 
       if (nextIdx >= sessionCards.length) {
@@ -295,6 +309,42 @@ export default function App() {
       notify(err.message, "error");
     } finally {
       setBusy(false);
+    }
+  }
+
+  // ── Mnemonic ─────────────────────────────────────────
+
+  async function onGenerateMnemonic() {
+    if (!currentCard) return;
+    setLoadingMnemonic(true);
+    try {
+      const res = await getCardMnemonic(currentCard.card_id, apiKey);
+      setMnemonic(res.mnemonic);
+    } catch (err) {
+      notify(err.message, "error");
+    } finally {
+      setLoadingMnemonic(false);
+    }
+  }
+
+  // ── Chat ─────────────────────────────────────────────
+  
+  async function onSendChat(e) {
+    e.preventDefault();
+    if (!chatInput.trim() || !selectedDeckId) return;
+    
+    const userMsg = { role: "user", text: chatInput };
+    setChatMessages((prev) => [...prev, userMsg]);
+    setChatInput("");
+    setChatBusy(true);
+
+    try {
+      const res = await deckChat(selectedDeckId, userMsg.text, apiKey);
+      setChatMessages((prev) => [...prev, { role: "ai", text: res.reply }]);
+    } catch (err) {
+      notify(err.message, "error");
+    } finally {
+      setChatBusy(false);
     }
   }
 
@@ -359,6 +409,21 @@ export default function App() {
     setImportStep("idle");
     setImportJobId("");
     setImportResult(null);
+  }
+
+  // ── Render Helpers ───────────────────────────────────
+  function renderText(text, isFront) {
+    if (!text) return null;
+    let html = text.replace(/!\[.*?\]\((.*?)\)/g, (match, url) => {
+      const fullUrl = url.startsWith("/") ? API_BASE.replace(/\/api$/, "") + url : url;
+      return `<img src="${fullUrl}" style="max-width: 100%; border-radius: 8px; margin-top: 10px;" />`;
+    });
+    if (isFront) {
+      html = html.replace(/{{(.*?)}}/g, `<span class="cloze-hidden">[...]</span>`);
+    } else {
+      html = html.replace(/{{(.*?)}}/g, `<span class="cloze-revealed">$1</span>`);
+    }
+    return <span dangerouslySetInnerHTML={{ __html: html }} />;
   }
 
   // ── Render ───────────────────────────────────────────
@@ -593,7 +658,7 @@ export default function App() {
                       <div className="flashcard-face">
                         <div className="card-type-badge">{currentCard.type}</div>
                         <p className="flashcard-label">Question</p>
-                        <p className="flashcard-text">{currentCard.front}</p>
+                        <p className="flashcard-text">{renderText(currentCard.front, true)}</p>
                         {!flipped && (
                           <p className="flashcard-hint">
                             Click or press <kbd className="kbd">Space</kbd> to reveal
@@ -603,13 +668,28 @@ export default function App() {
                       {/* Back face */}
                       <div className="flashcard-face flashcard-back">
                         <p className="flashcard-label">Answer</p>
-                        <p className="flashcard-text">{currentCard.back}</p>
+                        <p className="flashcard-text">{renderText(currentCard.back, false)}</p>
                       </div>
                     </div>
                   </div>
 
+                  {flipped && !mnemonic && (
+                      <div style={{ textAlign: "center", marginTop: "1rem" }}>
+                         <button className="btn btn-secondary" onClick={onGenerateMnemonic} disabled={loadingMnemonic}>
+                            {loadingMnemonic ? <span className="spinner" /> : "💡 Need a mnemonic?"}
+                         </button>
+                      </div>
+                  )}
+
+                  {flipped && mnemonic && (
+                      <div className="panel" style={{ marginTop: "1rem", background: "var(--bg-surface)", border: "1px dashed var(--accent-primary)" }}>
+                         <h4 style={{ margin: "0 0 0.5rem 0", color: "var(--accent-primary)" }}>💡 Memory Trick</h4>
+                         <p style={{ margin: 0, fontSize: "0.95rem" }}>{mnemonic}</p>
+                      </div>
+                  )}
+
                   {flipped && (
-                    <div className="rating-grid">
+                    <div className="rating-grid" style={{ marginTop: "1rem" }}>
                       {RATINGS.map((r) => (
                         <button
                           key={r.key}
@@ -691,6 +771,69 @@ export default function App() {
                     </div>
                   ))}
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Chat Tab ────────────────────────────────── */}
+      {tab === "chat" && (
+        <div className="layout-single" style={{ maxWidth: 640, margin: "0 auto" }}>
+          <div className="panel" style={{ display: "flex", flexDirection: "column", height: "70vh" }}>
+            <h2 className="panel-title">💬 Chat with {selectedDeck?.name || "your Deck"}</h2>
+            
+            {!selectedDeckId ? (
+              <div className="empty-state" style={{flex: 1, justifyContent: "center", display: "flex", flexDirection: "column"}}>
+                <p className="muted">Please select a deck from the Decks tab to chat with it.</p>
+              </div>
+            ) : (
+              <>
+                <div style={{ flex: 1, overflowY: "auto", padding: "1rem", border: "1px solid var(--border-default)", borderRadius: "var(--radius-md)", marginBottom: "1rem", background: "var(--bg-app)" }}>
+                  {chatMessages.length === 0 ? (
+                    <p className="muted" style={{ textAlign: "center", marginTop: "2rem" }}>Ask me anything about the concepts in this deck!</p>
+                  ) : (
+                    chatMessages.map((msg, i) => (
+                      <div key={i} style={{
+                        textAlign: msg.role === "user" ? "right" : "left",
+                        marginBottom: "1rem"
+                      }}>
+                        <div style={{
+                          display: "inline-block",
+                          padding: "0.75rem 1rem",
+                          borderRadius: "1rem",
+                          maxWidth: "80%",
+                          background: msg.role === "user" ? "var(--accent-primary)" : "var(--bg-surface)",
+                          color: msg.role === "user" ? "#fff" : "var(--text-primary)",
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+                          border: msg.role === "ai" ? "1px solid var(--border-default)" : "none",
+                          borderBottomRightRadius: msg.role === "user" ? 0 : "1rem",
+                          borderBottomLeftRadius: msg.role === "ai" ? 0 : "1rem",
+                        }}>
+                          {msg.text}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  {chatBusy && (
+                    <div style={{ textAlign: "left" }}>
+                      <div style={{ display: "inline-block", padding: "0.75rem", background: "var(--bg-surface)", borderRadius: "1rem", borderBottomLeftRadius: 0 }}>
+                        <span className="spinner" style={{ borderColor: "var(--text-muted)", borderRightColor: "transparent" }}></span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                <form onSubmit={onSendChat} style={{ display: "flex", gap: "0.5rem" }}>
+                  <input 
+                    placeholder="Ask a question..."
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    style={{ flex: 1 }}
+                    autoFocus
+                  />
+                  <button type="submit" className="btn btn-primary" disabled={!chatInput.trim() || chatBusy}>Send</button>
+                </form>
+              </>
             )}
           </div>
         </div>

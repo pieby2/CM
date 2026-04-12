@@ -68,7 +68,7 @@ def process_import_job(db: Session, job_id: str) -> ImportProcessResult:
         job.error_message = None
         db.commit()
 
-        lines, method, page_count = extract_pdf_lines(pdf_path)
+        lines, method, page_count = extract_pdf_lines(pdf_path, job.id)
         text_char_count = sum(len(line.text) for line in lines)
 
         job.status = "chunking"
@@ -122,7 +122,7 @@ def _load_dependency(module_name: str):
         ) from exc
 
 
-def extract_pdf_lines(pdf_path: Path) -> tuple[list[ExtractedLine], str, int]:
+def extract_pdf_lines(pdf_path: Path, job_id: str) -> tuple[list[ExtractedLine], str, int]:
     best_lines: list[ExtractedLine] = []
     best_method = "none"
     best_score = 0
@@ -134,7 +134,10 @@ def extract_pdf_lines(pdf_path: Path) -> tuple[list[ExtractedLine], str, int]:
         ("pdfplumber", _extract_with_pdfplumber),
     ):
         try:
-            lines, method_page_count = extractor(pdf_path)
+            if method_name == "pymupdf":
+                lines, method_page_count = extractor(pdf_path, job_id)
+            else:
+                lines, method_page_count = extractor(pdf_path)
             page_count = max(page_count, method_page_count)
             score = _text_score(lines)
             if score > best_score:
@@ -222,14 +225,39 @@ def chunk_lines_into_sections(
     return [section for section in sections if section.content.strip()]
 
 
-def _extract_with_pymupdf(pdf_path: Path) -> tuple[list[ExtractedLine], int]:
+def _extract_with_pymupdf(pdf_path: Path, job_id: str) -> tuple[list[ExtractedLine], int]:
     pymupdf = _load_dependency("pymupdf")
     lines: list[ExtractedLine] = []
+    
+    storage_dir = Path(settings.storage_path) / job_id
+    storage_dir.mkdir(parents=True, exist_ok=True)
 
     with pymupdf.open(pdf_path) as document:
         page_count = document.page_count
         for page_index in range(page_count):
             page = document.load_page(page_index)
+            
+            for img in page.get_images(full=True):
+                xref = img[0]
+                try:
+                    pix = pymupdf.Pixmap(document, xref)
+                    if pix.n - pix.alpha > 3:
+                        pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
+                    img_name = f"img_p{page_index+1}_{xref}.png"
+                    img_path = storage_dir / img_name
+                    pix.save(str(img_path))
+                    
+                    lines.append(
+                        ExtractedLine(
+                            page_number=page_index + 1,
+                            text=f"![Image_{xref}](/api/storage/{job_id}/{img_name})",
+                            font_size=12.0,
+                            is_bold=False,
+                        )
+                    )
+                except Exception:
+                    pass
+            
             data = page.get_text("dict")
             for block in data.get("blocks", []):
                 for line in block.get("lines", []):
