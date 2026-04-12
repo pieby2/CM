@@ -21,10 +21,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-@app.on_event("startup")
-def startup() -> None:
-    Path(settings.storage_path).mkdir(parents=True, exist_ok=True)
+# Ensure storage directory exists before mounting (needed at import time on Render)
+Path(settings.storage_path).mkdir(parents=True, exist_ok=True)
 
 
 @app.get("/health")
