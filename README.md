@@ -1,4 +1,4 @@
-# Cue Math — Smart Flashcard Engine
+# CM — Smart Flashcard Engine
 
 AI-powered flashcard app that turns any PDF into a smart, practice-ready deck with spaced repetition.
 
