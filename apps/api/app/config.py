@@ -10,9 +10,10 @@ class Settings(BaseSettings):
     )
 
     database_url: str = "postgresql+psycopg2://cue:cue@localhost:5432/cue_math"
+    db_connect_timeout_seconds: int = 8
     redis_url: str = "redis://localhost:6379/0"
     storage_path: str = "./storage"
-    cors_origins_raw: str = "http://localhost:5173"
+    cors_origins_raw: str = "http://localhost:5173,https://cue-math-web.onrender.com"
     default_due_limit: int = 30
     ocr_language: str = "eng"
     section_min_chars: int = 700

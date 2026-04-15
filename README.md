@@ -38,6 +38,8 @@ pip install -r requirements.txt
 copy ..\..\..env.example .env
 # Edit .env and set at least one AI key: CUE_GEMINI_API_KEY / CUE_OPENAI_API_KEY / CUE_GROQ_API_KEY
 # Optional: set CUE_DEFAULT_AI_PROVIDER=gemini|openai|groq
+# For deployed web apps, set CUE_CORS_ORIGINS_RAW to include your frontend origin(s)
+# Optional stability: set CUE_DB_CONNECT_TIMEOUT_SECONDS=8 to fail fast on DB connectivity issues
 python -m scripts.migrate
 python -m scripts.seed
 uvicorn app.main:app --reload --port 8000

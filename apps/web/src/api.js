@@ -26,44 +26,84 @@ const API_TIMEOUT_MS = Number.isFinite(parsedTimeout) && parsedTimeout > 0
     ? DEFAULT_LOCAL_TIMEOUT_MS
     : DEFAULT_REMOTE_TIMEOUT_MS;
 
+const API_HEALTH_URL = `${API_BASE.replace(/\/api\/?$/, "")}/health`;
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function warmUpApi() {
+  try {
+    await fetch(API_HEALTH_URL, {
+      method: "GET",
+      cache: "no-store",
+    });
+  } catch {
+    // best-effort warm-up only
+  }
+}
+
 async function apiRequest(path, options = {}) {
-  const { timeoutMs = API_TIMEOUT_MS, ...requestOptions } = options;
+  const {
+    timeoutMs = API_TIMEOUT_MS,
+    retries = 0,
+    retryDelayMs = 900,
+    idempotent = false,
+    ...requestOptions
+  } = options;
   const effectiveTimeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : API_TIMEOUT_MS;
   const isFormData = options.body instanceof FormData;
+  const method = String(requestOptions.method || "GET").toUpperCase();
+  const canRetry = idempotent || method === "GET" || method === "HEAD" || method === "OPTIONS";
 
   const headers = isFormData
     ? { ...(options.headers || {}) }
     : { "Content-Type": "application/json", ...(options.headers || {}) };
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), effectiveTimeoutMs);
-
   let response;
-  try {
-    response = await fetch(`${API_BASE}${path}`, {
-      ...requestOptions,
-      headers,
-      signal: controller.signal,
-    });
-  } catch (err) {
-    if (err?.name === "AbortError") {
-      const coldStartHint = isLocalApiBase(API_BASE)
-        ? "Please ensure the API is running."
-        : "The API may be cold-starting. Please retry in a few seconds.";
-      throw new Error(
-        `Request timed out after ${Math.round(effectiveTimeoutMs / 1000)}s. ${coldStartHint} Endpoint: ${API_BASE}.`
-      );
-    }
+  let lastError = null;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), effectiveTimeoutMs);
+    try {
+      response = await fetch(`${API_BASE}${path}`, {
+        ...requestOptions,
+        headers,
+        signal: controller.signal,
+      });
+      lastError = null;
+      break;
+    } catch (err) {
+      lastError = err;
+      if (canRetry && attempt < retries) {
+        await warmUpApi();
+        await delay(retryDelayMs * (attempt + 1));
+        continue;
+      }
 
-    if (err instanceof TypeError) {
-      throw new Error(
-        `Unable to reach API at ${API_BASE}. Start the backend or set VITE_API_URL to a reachable API.`
-      );
-    }
+      if (err?.name === "AbortError") {
+        const coldStartHint = isLocalApiBase(API_BASE)
+          ? "Please ensure the API is running."
+          : "The API may be cold-starting or waking up. Please retry in a few seconds.";
+        throw new Error(
+          `Request timed out after ${Math.round(effectiveTimeoutMs / 1000)}s. ${coldStartHint} Endpoint: ${API_BASE}.`
+        );
+      }
 
-    throw err;
-  } finally {
-    clearTimeout(timeoutId);
+      if (err instanceof TypeError) {
+        throw new Error(
+          `Unable to reach API at ${API_BASE}. The API may be temporarily unavailable or restarting.`
+        );
+      }
+
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  if (!response && lastError) {
+    throw lastError;
   }
 
   if (!response.ok) {
@@ -108,6 +148,10 @@ export function createUser(email) {
   return apiRequest("/users", {
     method: "POST",
     body: JSON.stringify({ email }),
+    idempotent: true,
+    retries: isLocalApiBase(API_BASE) ? 0 : 2,
+    retryDelayMs: 1200,
+    timeoutMs: isLocalApiBase(API_BASE) ? DEFAULT_LOCAL_TIMEOUT_MS : 70000,
   });
 }
 
