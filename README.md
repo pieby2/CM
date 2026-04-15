@@ -36,7 +36,8 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 copy ..\..\..env.example .env
-# Edit .env and set CUE_GROQ_API_KEY (get one free at https://console.groq.com/keys)
+# Edit .env and set at least one AI key: CUE_GEMINI_API_KEY / CUE_OPENAI_API_KEY / CUE_GROQ_API_KEY
+# Optional: set CUE_DEFAULT_AI_PROVIDER=gemini|openai|groq
 python -m scripts.migrate
 python -m scripts.seed
 uvicorn app.main:app --reload --port 8000
@@ -128,7 +129,7 @@ Card review → SM-2 (< 5 reviews) or HLR microservice (≥ 5 reviews)
 ```
 Upload PDF → PyMuPDF/pdfplumber/OCR extraction
      → Heading detection & section chunking
-     → Groq AI card generation (per section)
+     → Gemini AI card generation (per section)
      → Auto-tag with concepts
      → Create deck + cards + card states
 ```

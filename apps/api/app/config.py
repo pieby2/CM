@@ -22,8 +22,21 @@ class Settings(BaseSettings):
     hlr_timeout_seconds: float = 2.0
     hlr_min_reviews_per_card: int = 5
     hlr_default_target_recall: float = 0.78
+
+    default_ai_provider: str = "gemini"
+    ai_timeout_seconds: float = 45.0
+
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.0-flash"
+    gemini_temperature: float = 0.7
+
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+    openai_temperature: float = 0.7
+
     groq_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "llama-3.1-70b-versatile"
+    groq_vision_model: str = "llama-3.2-90b-vision-preview"
     groq_temperature: float = 0.7
 
     @property

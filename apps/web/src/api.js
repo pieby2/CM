@@ -1,16 +1,49 @@
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+const LOCALHOSTS = new Set(["localhost", "127.0.0.1"]);
+const DEFAULT_API_BASE =
+  typeof window !== "undefined" && !LOCALHOSTS.has(window.location.hostname)
+    ? `${window.location.origin}/api`
+    : "http://localhost:8000/api";
+
+const API_BASE = import.meta.env.VITE_API_URL || DEFAULT_API_BASE;
+const parsedTimeout = Number(import.meta.env.VITE_API_TIMEOUT_MS);
+const API_TIMEOUT_MS = Number.isFinite(parsedTimeout) && parsedTimeout > 0 ? parsedTimeout : 12000;
 
 async function apiRequest(path, options = {}) {
+  const { timeoutMs = API_TIMEOUT_MS, ...requestOptions } = options;
+  const effectiveTimeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : API_TIMEOUT_MS;
   const isFormData = options.body instanceof FormData;
 
   const headers = isFormData
     ? { ...(options.headers || {}) }
     : { "Content-Type": "application/json", ...(options.headers || {}) };
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), effectiveTimeoutMs);
+
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...requestOptions,
+      headers,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      throw new Error(
+        `Request timed out after ${Math.round(effectiveTimeoutMs / 1000)}s. Please ensure the API is running at ${API_BASE}.`
+      );
+    }
+
+    if (err instanceof TypeError) {
+      throw new Error(
+        `Unable to reach API at ${API_BASE}. Start the backend or set VITE_API_URL to a reachable API.`
+      );
+    }
+
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     let detail = `Request failed with status ${response.status}`;
@@ -30,6 +63,22 @@ async function apiRequest(path, options = {}) {
   }
 
   return response.json();
+}
+
+function buildAiHeaders(apiKey = null, provider = "auto") {
+  const headers = {};
+  const normalizedKey = typeof apiKey === "string" ? apiKey.trim() : "";
+  const normalizedProvider = typeof provider === "string" ? provider.trim().toLowerCase() : "";
+
+  if (normalizedKey) {
+    headers["X-AI-Api-Key"] = normalizedKey;
+  }
+
+  if (normalizedProvider && normalizedProvider !== "auto") {
+    headers["X-AI-Provider"] = normalizedProvider;
+  }
+
+  return headers;
 }
 
 // ── Users ──────────────────────────────────────────────
@@ -169,12 +218,8 @@ export function getImportSections(jobId) {
   return apiRequest(`/imports/${encodeURIComponent(jobId)}/sections`);
 }
 
-export function generateCardsFromImport(jobId, payload = {}, apiKey = null) {
-  const headers = {};
-  if (apiKey) {
-    headers["X-Groq-Api-Key"] = apiKey;
-  }
-
+export function generateCardsFromImport(jobId, payload = {}, apiKey = null, provider = "auto") {
+  const headers = buildAiHeaders(apiKey, provider);
   return apiRequest(`/imports/${encodeURIComponent(jobId)}/generate`, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -184,15 +229,13 @@ export function generateCardsFromImport(jobId, payload = {}, apiKey = null) {
 
 // ── Chat & Mnemonics ───────────────────────────────────
 
-export function getCardMnemonic(cardId, apiKey = null) {
-  const headers = {};
-  if (apiKey) headers["X-Groq-Api-Key"] = apiKey;
+export function getCardMnemonic(cardId, apiKey = null, provider = "auto") {
+  const headers = buildAiHeaders(apiKey, provider);
   return apiRequest(`/cards/${encodeURIComponent(cardId)}/mnemonic`, { headers });
 }
 
-export function deckChat(deckId, message, apiKey = null) {
-  const headers = {};
-  if (apiKey) headers["X-Groq-Api-Key"] = apiKey;
+export function deckChat(deckId, message, apiKey = null, provider = "auto") {
+  const headers = buildAiHeaders(apiKey, provider);
   return apiRequest(`/chat/deck/${encodeURIComponent(deckId)}`, {
     method: "POST",
     body: JSON.stringify({ message }),

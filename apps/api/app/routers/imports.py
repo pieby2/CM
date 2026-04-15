@@ -137,10 +137,12 @@ def list_import_sections(job_id: str, db: Session = Depends(get_db)) -> list[Sec
 def generate_cards_from_import(
     job_id: str,
     payload: GenerateCardsRequest | None = None,
-    x_groq_api_key: str | None = Header(default=None),
+    x_ai_api_key: str | None = Header(default=None, alias="X-AI-Api-Key"),
+    x_ai_provider: str | None = Header(default=None, alias="X-AI-Provider"),
+    x_groq_api_key: str | None = Header(default=None, alias="X-Groq-Api-Key"),
     db: Session = Depends(get_db),
 ) -> GenerateCardsResponse:
-    """Generate flashcards from extracted PDF sections using Groq."""
+    """Generate flashcards from extracted PDF sections using the configured AI provider."""
     from app.services.card_generator import CardGenerationError, generate_cards_from_sections
 
     if payload is None:
@@ -171,7 +173,8 @@ def generate_cards_from_import(
             sections=section_dicts,
             subject=payload.subject,
             card_count_hint=payload.card_count_hint,
-            api_key=x_groq_api_key or None,
+            api_key=x_ai_api_key or x_groq_api_key or None,
+            provider=x_ai_provider or None,
         )
     except CardGenerationError as exc:
         job.status = "review_ready"

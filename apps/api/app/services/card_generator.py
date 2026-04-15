@@ -1,4 +1,4 @@
-"""LLM-powered flashcard generator using Groq."""
+"""LLM-powered flashcard generation and tutoring helpers."""
 
 from __future__ import annotations
 
@@ -6,8 +6,10 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from app.config import settings
+from app.services.ai_client import AIClientError, generate_completion
 
 logger = logging.getLogger("cue.card_generator")
 
@@ -67,22 +69,9 @@ def generate_cards_from_section(
     subject: str = "general",
     card_count_hint: int = 10,
     api_key: str | None = None,
+    provider: str | None = None,
 ) -> list[GeneratedCard]:
-    """Generate flashcards from a single section using Groq."""
-    resolved_key = api_key or settings.groq_api_key
-    if not resolved_key:
-        raise CardGenerationError(
-            "Groq API key not configured. Enter your API key in Settings or set CUE_GROQ_API_KEY."
-        )
-
-    try:
-        from groq import Groq
-    except ImportError as exc:
-        raise CardGenerationError(
-            "groq package not installed. Run: pip install groq"
-        ) from exc
-
-    client = Groq(api_key=resolved_key)
+    """Generate flashcards from a single section using the configured AI provider."""
 
     user_prompt = (
         f"Subject: {subject}\n"
@@ -91,42 +80,19 @@ def generate_cards_from_section(
         f"{section_content[:6000]}"
     )
 
-    import base64
-    from pathlib import Path
-
-    model_to_use = settings.groq_model
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-    ]
-
-    # Detect images in markdown
-    image_paths = re.findall(r'!\[.*?\]\(/api/storage/(.*?)/(.*?)\)', section_content)
-    if image_paths:
-        model_to_use = "llama-3.2-90b-vision-preview"
-        user_content = [{"type": "text", "text": user_prompt}]
-        for job_id, img_name in image_paths[:3]:  # limit to 3 images to avoid payload size errors
-            local_img_path = Path(settings.storage_path) / job_id / img_name
-            if local_img_path.exists():
-                with open(local_img_path, "rb") as f:
-                    b64_img = base64.b64encode(f.read()).decode('utf-8')
-                    user_content.append({
-                        "type": "image_url", 
-                        "image_url": {"url": f"data:image/png;base64,{b64_img}"}
-                    })
-        messages.append({"role": "user", "content": user_content})
-    else:
-        messages.append({"role": "user", "content": user_prompt})
+    image_paths = _collect_section_images(section_content)
 
     try:
-        response = client.chat.completions.create(
-            model=model_to_use,
-            messages=messages,
-            temperature=settings.groq_temperature,
+        raw_text = generate_completion(
+            system_prompt=SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            api_key=api_key,
+            provider=provider,
+            image_paths=image_paths,
         )
-        raw_text = response.choices[0].message.content.strip()
-    except Exception as exc:
-        logger.error("Groq API call failed: %s", exc)
-        raise CardGenerationError(f"Groq API error: {exc}") from exc
+    except AIClientError as exc:
+        logger.error("AI card generation failed: %s", exc)
+        raise CardGenerationError(str(exc)) from exc
 
     return _parse_cards(raw_text)
 
@@ -136,6 +102,7 @@ def generate_cards_from_sections(
     subject: str = "general",
     card_count_hint: int = 10,
     api_key: str | None = None,
+    provider: str | None = None,
 ) -> list[GeneratedCard]:
     """Generate flashcards from multiple sections with rate limit protection."""
     import time
@@ -176,6 +143,7 @@ def generate_cards_from_sections(
                 subject=subject,
                 card_count_hint=per_batch,
                 api_key=api_key,
+                provider=provider,
             )
             all_cards.extend(cards)
             logger.info("Generated %d cards from batch '%s'", len(cards), title[:60])
@@ -191,6 +159,16 @@ def generate_cards_from_sections(
         raise CardGenerationError(err_msg)
 
     return all_cards
+
+
+def _collect_section_images(section_content: str, limit: int = 3) -> list[Path]:
+    image_paths: list[Path] = []
+    matches = re.findall(r"!\[.*?\]\(/api/storage/([^/]+)/([^)]+)\)", section_content)
+    for job_id, image_name in matches[:limit]:
+        candidate = Path(settings.storage_path) / job_id / image_name
+        if candidate.is_file():
+            image_paths.append(candidate)
+    return image_paths
 
 
 def _parse_cards(raw_text: str) -> list[GeneratedCard]:
@@ -243,19 +221,13 @@ def _parse_cards(raw_text: str) -> list[GeneratedCard]:
     return cards
 
 
-def generate_mnemonic(front: str, back: str, api_key: str | None = None) -> str:
+def generate_mnemonic(
+    front: str,
+    back: str,
+    api_key: str | None = None,
+    provider: str | None = None,
+) -> str:
     """Generate a mnemonic or ELI5 analogy for a given card."""
-    resolved_key = api_key or settings.groq_api_key
-    if not resolved_key:
-        raise CardGenerationError("Groq API key not configured.")
-
-    try:
-        from groq import Groq
-    except ImportError as exc:
-        raise CardGenerationError("groq package not installed.") from exc
-
-    client = Groq(api_key=resolved_key)
-
     sys_prompt = (
         "You are a creative tutor. Your goal is to help a student easily memorize a tricky flashcard.\n"
         "Generate a short, memorable mnemonic device, acronym, or a brilliant 'Explain Like I'm 5' analogy.\n"
@@ -265,16 +237,14 @@ def generate_mnemonic(front: str, back: str, api_key: str | None = None) -> str:
     user_prompt = f"Flashcard Front (Question): {front}\nFlashcard Back (Answer): {back}\n\nPlease give me a memory trick."
 
     try:
-        response = client.chat.completions.create(
-            model=settings.groq_model,
-            messages=[
-                {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
+        return generate_completion(
+            system_prompt=sys_prompt,
+            user_prompt=user_prompt,
+            api_key=api_key,
+            provider=provider,
             temperature=0.8,
         )
-        return response.choices[0].message.content.strip()
-    except Exception as exc:
-        logger.error("Groq API mnemonic generation failed: %s", exc)
-        raise CardGenerationError("Failed to generate mnemonic") from exc
+    except AIClientError as exc:
+        logger.error("AI mnemonic generation failed: %s", exc)
+        raise CardGenerationError(str(exc)) from exc
 

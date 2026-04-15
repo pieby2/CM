@@ -37,6 +37,13 @@ const RATINGS = [
   { key: "easy", label: "Easy", hint: "Press 4", cls: "rating-easy" },
 ];
 
+const AI_PROVIDERS = [
+  { key: "auto", label: "Auto" },
+  { key: "gemini", label: "Gemini" },
+  { key: "openai", label: "OpenAI" },
+  { key: "groq", label: "Groq" },
+];
+
 const EMPTY_STATS = { new_count: 0, learning_count: 0, mature_count: 0, total_count: 0 };
 const EMPTY_STREAK = { current_streak: 0, longest_streak: 0, total_review_days: 0, last_review_date: null };
 const CONFETTI_COLORS = ["#6366f1", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#f97316", "#ec4899"];
@@ -94,7 +101,10 @@ export default function App() {
   const [confetti, setConfetti] = useState([]);
 
   // Settings dialog
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("cue_groq_api_key") || "");
+  const [apiKey, setApiKey] = useState(
+    () => localStorage.getItem("cue_ai_api_key") || localStorage.getItem("cue_groq_api_key") || ""
+  );
+  const [aiProvider, setAiProvider] = useState(() => localStorage.getItem("cue_ai_provider") || "auto");
 
   const fileInputRef = useRef(null);
   const msgTimeout = useRef(null);
@@ -318,7 +328,7 @@ export default function App() {
     if (!currentCard) return;
     setLoadingMnemonic(true);
     try {
-      const res = await getCardMnemonic(currentCard.card_id, apiKey);
+      const res = await getCardMnemonic(currentCard.card_id, apiKey || null, aiProvider);
       setMnemonic(res.mnemonic);
     } catch (err) {
       notify(err.message, "error");
@@ -339,7 +349,7 @@ export default function App() {
     setChatBusy(true);
 
     try {
-      const res = await deckChat(selectedDeckId, userMsg.text, apiKey);
+      const res = await deckChat(selectedDeckId, userMsg.text, apiKey || null, aiProvider);
       setChatMessages((prev) => [...prev, { role: "ai", text: res.reply }]);
     } catch (err) {
       notify(err.message, "error");
@@ -387,7 +397,7 @@ export default function App() {
       const result = await generateCardsFromImport(job.id, {
         subject: importSubject,
         card_count_hint: 10,
-      }, apiKey || null);
+      }, apiKey || null, aiProvider);
       setImportResult(result);
       setImportStep("done");
 
@@ -436,7 +446,42 @@ export default function App() {
         <div style={{ maxWidth: 420, margin: "12vh auto", textAlign: "center" }}>
           <div className="logo" style={{ width: 56, height: 56, fontSize: "1.6rem", margin: "0 auto 1.5rem" }}>C</div>
           <h1 style={{ fontFamily: "Fraunces, serif", fontSize: "2.2rem", marginBottom: "0.5rem" }}>Cue Math</h1>
-          <p className="muted" style={{ marginBottom: "2rem" }}>Smart flashcards powered by AI and spaced repetition</p>
+          <p className="muted" style={{ marginBottom: "1.5rem" }}>Smart flashcards powered by AI and spaced repetition</p>
+
+          {/* Groq API Key CTA */}
+          <a
+            href="https://console.groq.com/keys"
+            target="_blank"
+            rel="noopener noreferrer"
+            id="get-groq-api-key"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              padding: "0.65rem 1.2rem",
+              borderRadius: "var(--radius-md, 10px)",
+              background: "linear-gradient(135deg, #f55036 0%, #ff7849 100%)",
+              color: "#fff",
+              fontWeight: 600,
+              fontSize: "0.9rem",
+              textDecoration: "none",
+              marginBottom: "1.5rem",
+              boxShadow: "0 4px 14px rgba(245, 80, 54, 0.35)",
+              transition: "transform 0.2s ease, box-shadow 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = "translateY(-2px)";
+              e.currentTarget.style.boxShadow = "0 6px 20px rgba(245, 80, 54, 0.45)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "translateY(0)";
+              e.currentTarget.style.boxShadow = "0 4px 14px rgba(245, 80, 54, 0.35)";
+            }}
+          >
+            🔑 Get your Groq API Key
+            <span style={{ fontSize: "0.75rem", opacity: 0.85 }}>→ console.groq.com</span>
+          </a>
+
           <form onSubmit={onLogin} className="panel" style={{ textAlign: "left" }}>
             <div className="form-group">
               <label>Email</label>
@@ -451,6 +496,39 @@ export default function App() {
               {busy ? <span className="spinner" /> : "Get Started"}
             </button>
           </form>
+
+          {/* Deployed link */}
+          <div style={{ marginTop: "1.5rem" }}>
+            <a
+              href="https://cue-math-web.onrender.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              id="deployed-link"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                fontSize: "0.82rem",
+                color: "var(--text-muted)",
+                textDecoration: "none",
+                padding: "0.4rem 0.8rem",
+                borderRadius: "var(--radius-sm, 6px)",
+                border: "1px solid var(--border-default, rgba(255,255,255,0.1))",
+                background: "var(--bg-surface, rgba(255,255,255,0.04))",
+                transition: "color 0.2s ease, border-color 0.2s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = "var(--accent-primary, #6366f1)";
+                e.currentTarget.style.borderColor = "var(--accent-primary, #6366f1)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = "var(--text-muted)";
+                e.currentTarget.style.borderColor = "var(--border-default, rgba(255,255,255,0.1))";
+              }}
+            >
+              🌐 Live at cue-math-web.onrender.com
+            </a>
+          </div>
         </div>
         {message && <div className={`status-bar ${msgType}`}>{message}</div>}
       </div>
@@ -487,17 +565,53 @@ export default function App() {
           {streak.current_streak > 0 && (
             <div className="streak-badge">🔥 {streak.current_streak} day streak</div>
           )}
-          <div style={{ display: "flex", alignItems: "center" }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontWeight: "600", marginRight: "0.5rem" }}>Groq API Key:</span>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontWeight: "600" }}>AI Key:</span>
+            <select
+              value={aiProvider}
+              onChange={(e) => {
+                const next = e.target.value;
+                setAiProvider(next);
+                localStorage.setItem("cue_ai_provider", next);
+              }}
+              style={{
+                padding: "0.35rem 0.45rem",
+                fontSize: "0.8rem",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--border-default)",
+                background: "var(--bg-surface)",
+                color: "var(--text-primary)",
+                width: "95px",
+                outline: "none",
+              }}
+              title="Choose AI provider"
+            >
+              {AI_PROVIDERS.map((provider) => (
+                <option key={provider.key} value={provider.key}>
+                  {provider.label}
+                </option>
+              ))}
+            </select>
             <input
               type="password"
-              placeholder="gsk_..."
+              placeholder={
+                aiProvider === "gemini"
+                  ? "AIza..."
+                  : aiProvider === "openai"
+                    ? "sk-..."
+                    : aiProvider === "groq"
+                      ? "gsk_..."
+                      : "AIza... / sk-... / gsk_..."
+              }
               value={apiKey}
               onChange={(e) => {
                 const val = e.target.value.trim();
                 setApiKey(val);
-                if (val) localStorage.setItem("cue_groq_api_key", val);
-                else localStorage.removeItem("cue_groq_api_key");
+                if (val) {
+                  localStorage.setItem("cue_ai_api_key", val);
+                } else {
+                  localStorage.removeItem("cue_ai_api_key");
+                }
               }}
               style={{
                 padding: "0.35rem 0.6rem",
@@ -506,7 +620,7 @@ export default function App() {
                 border: "1px solid var(--border-default)",
                 background: "var(--bg-surface)",
                 color: "var(--text-primary)",
-                width: "180px",
+                width: "220px",
                 outline: "none",
               }}
               onFocus={(e) => {

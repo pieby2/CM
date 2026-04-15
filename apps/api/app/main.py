@@ -2,10 +2,9 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.routers import cards, concepts, decks, imports, reviews, users, chat
+from app.routers import cards, chat, concepts, decks, imports, reviews, users
 
 app = FastAPI(
     title="Cue Math API",
@@ -21,8 +20,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Ensure storage directory exists before mounting (needed at import time on Render)
-Path(settings.storage_path).mkdir(parents=True, exist_ok=True)
+
+@app.on_event("startup")
+def startup() -> None:
+    Path(settings.storage_path).mkdir(parents=True, exist_ok=True)
 
 
 @app.get("/health")
@@ -30,7 +31,6 @@ def health() -> dict[str, bool]:
     return {"ok": True}
 
 
-app.mount("/api/storage", StaticFiles(directory=settings.storage_path), name="storage")
 app.include_router(users.router, prefix="/api")
 app.include_router(decks.router, prefix="/api")
 app.include_router(cards.router, prefix="/api")

@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Header, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Card, CardState, Deck, utcnow
 from app.schemas import CardCreate, CardRead, CardUpdate
+from app.services.card_generator import CardGenerationError, generate_mnemonic
 
 router = APIRouter(tags=["cards"])
 
@@ -91,22 +92,25 @@ def delete_card(card_id: str, db: Session = Depends(get_db)) -> None:
     db.delete(card)
     db.commit()
 
-
-from fastapi import Header
-from app.services.card_generator import generate_mnemonic, CardGenerationError
-
 @router.get("/cards/{card_id}/mnemonic")
 def get_card_mnemonic(
     card_id: str,
     db: Session = Depends(get_db),
-    x_groq_api_key: str | None = Header(default=None, alias="X-Groq-Api-Key")
+    x_ai_api_key: str | None = Header(default=None, alias="X-AI-Api-Key"),
+    x_ai_provider: str | None = Header(default=None, alias="X-AI-Provider"),
+    x_groq_api_key: str | None = Header(default=None, alias="X-Groq-Api-Key"),
 ) -> dict[str, str]:
     card = db.get(Card, card_id)
     if card is None:
         raise HTTPException(status_code=404, detail="Card not found")
-        
+
     try:
-        mnemonic = generate_mnemonic(front=card.front, back=card.back, api_key=x_groq_api_key)
+        mnemonic = generate_mnemonic(
+            front=card.front,
+            back=card.back,
+            api_key=x_ai_api_key or x_groq_api_key,
+            provider=x_ai_provider,
+        )
         return {"mnemonic": mnemonic}
     except CardGenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
