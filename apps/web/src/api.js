@@ -5,8 +5,26 @@ const DEFAULT_API_BASE =
     : "http://localhost:8000/api";
 
 const API_BASE = import.meta.env.VITE_API_URL || DEFAULT_API_BASE;
+
+const DEFAULT_LOCAL_TIMEOUT_MS = 12000;
+const DEFAULT_REMOTE_TIMEOUT_MS = 45000;
+
+function isLocalApiBase(apiBase) {
+  try {
+    const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost";
+    const url = new URL(apiBase, origin);
+    return LOCALHOSTS.has(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 const parsedTimeout = Number(import.meta.env.VITE_API_TIMEOUT_MS);
-const API_TIMEOUT_MS = Number.isFinite(parsedTimeout) && parsedTimeout > 0 ? parsedTimeout : 12000;
+const API_TIMEOUT_MS = Number.isFinite(parsedTimeout) && parsedTimeout > 0
+  ? parsedTimeout
+  : isLocalApiBase(API_BASE)
+    ? DEFAULT_LOCAL_TIMEOUT_MS
+    : DEFAULT_REMOTE_TIMEOUT_MS;
 
 async function apiRequest(path, options = {}) {
   const { timeoutMs = API_TIMEOUT_MS, ...requestOptions } = options;
@@ -29,8 +47,11 @@ async function apiRequest(path, options = {}) {
     });
   } catch (err) {
     if (err?.name === "AbortError") {
+      const coldStartHint = isLocalApiBase(API_BASE)
+        ? "Please ensure the API is running."
+        : "The API may be cold-starting. Please retry in a few seconds.";
       throw new Error(
-        `Request timed out after ${Math.round(effectiveTimeoutMs / 1000)}s. Please ensure the API is running at ${API_BASE}.`
+        `Request timed out after ${Math.round(effectiveTimeoutMs / 1000)}s. ${coldStartHint} Endpoint: ${API_BASE}.`
       );
     }
 
