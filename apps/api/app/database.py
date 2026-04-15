@@ -16,14 +16,20 @@ def _is_local_host(host: str | None) -> bool:
 
 
 db_url = make_url(settings.database_url)
+_is_sqlite = db_url.get_backend_name() == "sqlite"
+
 engine_kwargs: dict = {
     "future": True,
-    "pool_pre_ping": True,
-    "pool_timeout": 20,
 }
 
+if not _is_sqlite:
+    engine_kwargs["pool_pre_ping"] = True
+    engine_kwargs["pool_timeout"] = 20
+
 connect_args: dict = {}
-if db_url.get_backend_name().startswith("postgresql"):
+if _is_sqlite:
+    connect_args["check_same_thread"] = False
+elif db_url.get_backend_name().startswith("postgresql"):
     connect_args["connect_timeout"] = max(1, int(settings.db_connect_timeout_seconds))
     if not _is_local_host(db_url.host) and "sslmode" not in db_url.query:
         connect_args["sslmode"] = "require"

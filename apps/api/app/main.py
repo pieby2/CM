@@ -4,7 +4,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.database import Base, engine
 from app.routers import cards, chat, concepts, decks, imports, reviews, users
+import app.models  # noqa: F401 — ensure models are registered with Base
 
 app = FastAPI(
     title="Cue Math API",
@@ -24,6 +26,7 @@ app.add_middleware(
 @app.on_event("startup")
 def startup() -> None:
     Path(settings.storage_path).mkdir(parents=True, exist_ok=True)
+    Base.metadata.create_all(bind=engine)
 
 
 @app.get("/health")
