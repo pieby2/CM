@@ -11,6 +11,14 @@ from app.config import settings
 logger = logging.getLogger("cue.ai_client")
 
 SUPPORTED_AI_PROVIDERS = {"gemini", "openai", "groq"}
+DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+DEPRECATED_GROQ_MODEL_REPLACEMENTS = {
+    "llama-3.1-70b-versatile": "llama-3.3-70b-versatile",
+    "llama-3.1-70b-specdec": "llama-3.3-70b-specdec",
+    "llama-3.2-11b-vision-preview": "meta-llama/llama-4-scout-17b-16e-instruct",
+    "llama-3.2-90b-vision-preview": "meta-llama/llama-4-scout-17b-16e-instruct",
+}
 
 
 class AIClientError(Exception):
@@ -73,6 +81,25 @@ def resolve_temperature(provider: str, temperature: float | None) -> float:
     }[provider]
 
 
+def resolve_groq_model(model: str, has_images: bool) -> str:
+    resolved_model = model.strip() if model else ""
+    if not resolved_model:
+        resolved_model = DEFAULT_GROQ_VISION_MODEL if has_images else DEFAULT_GROQ_MODEL
+
+    replacement = DEPRECATED_GROQ_MODEL_REPLACEMENTS.get(resolved_model)
+    if replacement:
+        env_name = "CUE_GROQ_VISION_MODEL" if has_images else "CUE_GROQ_MODEL"
+        logger.warning(
+            "Configured Groq model '%s' is deprecated; using '%s' instead. Update %s.",
+            resolved_model,
+            replacement,
+            env_name,
+        )
+        return replacement
+
+    return resolved_model
+
+
 def resolve_model(provider: str, has_images: bool) -> str:
     if provider == "gemini":
         return settings.gemini_model
@@ -81,8 +108,8 @@ def resolve_model(provider: str, has_images: bool) -> str:
 
     # Groq vision requires a vision-capable model when images are included.
     if has_images:
-        return settings.groq_vision_model
-    return settings.groq_model
+        return resolve_groq_model(settings.groq_vision_model, has_images=True)
+    return resolve_groq_model(settings.groq_model, has_images=False)
 
 
 def encode_image_paths(image_paths: list[Path] | None) -> list[tuple[str, str]]:

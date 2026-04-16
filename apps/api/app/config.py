@@ -36,8 +36,8 @@ class Settings(BaseSettings):
     openai_temperature: float = 0.7
 
     groq_api_key: str = ""
-    groq_model: str = "llama-3.1-70b-versatile"
-    groq_vision_model: str = "llama-3.2-90b-vision-preview"
+    groq_model: str = "llama-3.3-70b-versatile"
+    groq_vision_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
     groq_temperature: float = 0.7
 
     @property
