@@ -10,6 +10,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      HAS_GCP_CREDS: ${{ secrets.GCP_CREDENTIALS != '' }}
     
     steps:
       - name: Checkout code
@@ -32,20 +34,20 @@ jobs:
           echo "Running tests..."
 
       - name: Authenticate with Google Cloud
-        if: ${{ secrets.GCP_CREDENTIALS != '' }}
+        if: env.HAS_GCP_CREDS == 'true'
         uses: google-github-actions/auth@v1
         with:
           credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
 
       - name: Configure Docker
-        if: ${{ secrets.GCP_CREDENTIALS != '' }}
+        if: env.HAS_GCP_CREDS == 'true'
         run: gcloud auth configure-docker gcr.io
 
       - name: Build and Push Docker Image
         run: |
           cd apps/api
           docker build -t gcr.io/cm-api-mock/cm-api:${{ github.sha }} .
-          if [ -n "${{ secrets.GCP_CREDENTIALS }}" ]; then
+          if [ "${{ env.HAS_GCP_CREDS }}" == "true" ]; then
             docker tag gcr.io/cm-api-mock/cm-api:${{ github.sha }} gcr.io/${{ secrets.GCP_PROJECT }}/cm-api:${{ github.sha }}
             docker push gcr.io/${{ secrets.GCP_PROJECT }}/cm-api:${{ github.sha }}
           else
@@ -53,7 +55,7 @@ jobs:
           fi
 
       - name: Deploy to Cloud Run
-        if: ${{ secrets.GCP_CREDENTIALS != '' }}
+        if: env.HAS_GCP_CREDS == 'true'
         uses: google-github-actions/deploy-cloudrun@v1
         with:
           service: cm-api
