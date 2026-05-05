@@ -104,11 +104,11 @@ def generate_cards_from_sections(
     api_key: str | None = None,
     provider: str | None = None,
 ) -> list[GeneratedCard]:
-    """Generate flashcards from multiple sections with rate limit protection."""
+    """Generate flashcards from multiple sections using the CrewAI multi-agent pipeline."""
+    from app.services.crew_generator import generate_cards_with_crew
     import time
     all_cards: list[GeneratedCard] = []
     
-    # 1. Batch sections to reduce API calls (target ~4000-6000 chars per batch)
     batches = []
     current_batch_title = "Combined Sections"
     current_batch_content = ""
@@ -130,24 +130,33 @@ def generate_cards_from_sections(
         
     per_batch = max(3, card_count_hint // max(1, len(batches)))
 
-    # 2. Process batches slowly to respect 15 Requests Per Minute (RPM) free tier
     last_error = None
     for i, (title, content) in enumerate(batches):
         if i > 0:
             time.sleep(4.5)  # 4.5 seconds = ~13 RPM
             
         try:
-            cards = generate_cards_from_section(
-                section_title=title,
-                section_content=content,
-                subject=subject,
-                card_count_hint=per_batch,
-                api_key=api_key,
-                provider=provider,
+            logger.info(f"Starting CrewAI pipeline for batch '{title[:60]}'")
+            crew_cards = generate_cards_with_crew(
+                content=content, 
+                subject=subject, 
+                num_cards=per_batch
             )
-            all_cards.extend(cards)
-            logger.info("Generated %d cards from batch '%s'", len(cards), title[:60])
-        except CardGenerationError as err:
+            
+            # Map CrewAI dicts to GeneratedCard objects
+            for c_dict in crew_cards:
+                all_cards.append(
+                    GeneratedCard(
+                        front=c_dict.get("front", ""),
+                        back=c_dict.get("back", ""),
+                        card_type=c_dict.get("card_type", "definition"),
+                        concept=c_dict.get("concept", "general"),
+                        difficulty=float(c_dict.get("difficulty", 1.0))
+                    )
+                )
+            
+            logger.info("Generated %d cards from batch '%s'", len(crew_cards), title[:60])
+        except Exception as err:
             logger.warning("Failed to generate cards for batch '%s': %s", title[:60], err)
             last_error = err
             continue

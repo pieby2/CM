@@ -5,6 +5,9 @@ AI-powered flashcard app that turns any PDF into a smart, practice-ready deck wi
 ## Features
 
 - **PDF → Flashcards**: Drop a PDF (textbook chapter, class notes) and get AI-generated flashcards covering definitions, relationships, worked examples, and edge cases
+- **URL/YouTube → Flashcards**: Paste a web article or YouTube link for autonomous scraping and flashcard generation.
+- **CrewAI Multi-Agent Pipeline**: Flashcard generation is orchestrated by a multi-agent team (Researcher, Educator, QA) for maximum pedagogical quality and zero hallucinations.
+- **AI Tutor & Vector Search**: Chat with your study materials using a LangChain-powered AI tutor equipped with `pgvector` RAG capabilities.
 - **Spaced Repetition**: Dual-scheduler system — SM-2 for new cards, Half-Life Regression for mature cards
 - **Concept Graph**: Cards are tagged with concepts; weak concepts surface automatically
 - **Progress Tracking**: Mastery stats, study streaks, and focus area insights
@@ -106,11 +109,16 @@ python -m app.workers.pdf_worker --poll-seconds 5
 - `GET /api/reviews/history?user_id=<id>&days=30` — daily review aggregates
 - `GET /api/reviews/streak?user_id=<id>` — study streak stats
 
-### PDF Import & AI Generation
+### Import & AI Generation
 - `POST /api/imports/pdf` — upload PDF (multipart)
-- `POST /api/imports/{job_id}/process` — extract & chunk text
-- `POST /api/imports/{job_id}/generate` — AI-generate flashcards from sections
+- `POST /api/imports/url` — import from YouTube or web article
+- `POST /api/imports/{job_id}/process` — extract, chunk text, and compute embeddings
+- `POST /api/imports/{job_id}/generate` — multi-agent CrewAI flashcard generation
 - `GET /api/imports/{job_id}/sections` — view extracted sections
+
+### AI Tutor
+- `POST /api/chat/agent` — Chat with the LangChain AI tutor (RAG over user documents)
+- `POST /api/chat/deck/{deck_id}` — Context-aware chat constrained to a specific deck
 
 ### Concepts
 - `POST /api/concepts/attach` — attach concepts to a card
@@ -127,11 +135,11 @@ Card review → SM-2 (< 5 reviews) or HLR microservice (≥ 5 reviews)
               next_due ←── fallback if HLR unavailable
 ```
 
-### PDF → Flashcard Pipeline
+### Import → Flashcard Pipeline
 ```
-Upload PDF → PyMuPDF/pdfplumber/OCR extraction
-     → Heading detection & section chunking
-     → Gemini AI card generation (per section)
+Upload PDF / Provide URL → PyMuPDF/OCR or BeautifulSoup/YouTube Transcript API
+     → Heading detection, section chunking & pgvector embedding
+     → CrewAI Multi-Agent generation (Researcher → Educator → QA)
      → Auto-tag with concepts
      → Create deck + cards + card states
 ```

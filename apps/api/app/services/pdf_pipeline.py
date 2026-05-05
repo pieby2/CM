@@ -10,6 +10,7 @@ from statistics import median
 from PIL import Image
 from sqlalchemy import delete
 from sqlalchemy.orm import Session
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from app.config import settings
 from app.models import ImportJob, Section
@@ -83,14 +84,22 @@ def process_import_job(db: Session, job_id: str) -> ImportProcessResult:
             max_section_chars=settings.section_max_chars,
         )
 
+        embeddings_model = GoogleGenerativeAIEmbeddings(
+            model="models/text-embedding-004",
+            google_api_key=settings.gemini_api_key
+        )
+        texts_to_embed = [draft.title + "\n" + draft.content for draft in sections]
+        embeddings = embeddings_model.embed_documents(texts_to_embed)
+
         db.execute(delete(Section).where(Section.import_job_id == job.id))
-        for index, draft in enumerate(sections):
+        for index, (draft, embedding) in enumerate(zip(sections, embeddings)):
             db.add(
                 Section(
                     import_job_id=job.id,
                     title=draft.title[:255],
                     order_index=index,
                     content=draft.content,
+                    embedding=embedding,
                 )
             )
 

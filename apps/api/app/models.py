@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
+from pgvector.sqlalchemy import Vector
 
 from app.database import Base
 
@@ -58,6 +59,7 @@ class Section(Base):
     title: Mapped[str] = mapped_column(String(255))
     order_index: Mapped[int] = mapped_column(Integer, default=0)
     content: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(768), nullable=True)
 
 
 class Card(Base):
@@ -144,3 +146,13 @@ class ReviewLog(Base):
         String(36), ForeignKey("concepts.id", ondelete="SET NULL"), nullable=True
     )
     scheduler_version: Mapped[str] = mapped_column(String(30), default="sm2-v1")
+
+
+class AgentSession(Base):
+    __tablename__ = "agent_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+    history: Mapped[list[dict]] = mapped_column(JSON, default=list)

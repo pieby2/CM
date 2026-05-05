@@ -13,3 +13,12 @@ Pillow==11.0.0
 httpx==0.27.2
 google-generativeai==0.8.3
 groq
+pgvector
+langchain
+langchain-core
+langchain-community
+langchain-google-genai
+crewai
+beautifulsoup4
+requests
+youtube-transcript-api

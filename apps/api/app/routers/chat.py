@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Card, Deck
 from app.services.ai_client import AIClientError, generate_completion
+from app.services.agent import handle_chat
 
 router = APIRouter(tags=["chat"])
 
@@ -15,6 +16,15 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
+    reply: str
+
+class AgentChatRequest(BaseModel):
+    user_id: str
+    message: str
+    session_id: str | None = None
+
+class AgentChatResponse(BaseModel):
+    session_id: str
     reply: str
 
 
@@ -55,3 +65,15 @@ def deck_chat(
         return ChatResponse(reply=reply)
     except AIClientError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/chat/agent", response_model=AgentChatResponse)
+def agent_chat(
+    payload: AgentChatRequest,
+    db: Session = Depends(get_db),
+) -> AgentChatResponse:
+    try:
+        result = handle_chat(db, payload.user_id, payload.session_id, payload.message)
+        return AgentChatResponse(session_id=result["session_id"], reply=result["reply"])
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

@@ -1,0 +1,56 @@
+name: Deploy API to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/api/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          cd apps/api
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: Run Tests
+        run: |
+          # Add test command here, e.g., pytest
+          echo "Running tests..."
+
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker gcr.io
+
+      - name: Build and Push Docker Image
+        run: |
+          cd apps/api
+          docker build -t gcr.io/${{ secrets.GCP_PROJECT }}/cm-api:${{ github.sha }} .
+          docker push gcr.io/${{ secrets.GCP_PROJECT }}/cm-api:${{ github.sha }}
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v1
+        with:
+          service: cm-api
+          image: gcr.io/${{ secrets.GCP_PROJECT }}/cm-api:${{ github.sha }}
+          region: us-central1
+          env_vars: |
+            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+            DATABASE_URL=${{ secrets.DATABASE_URL }}

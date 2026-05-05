@@ -11,6 +11,8 @@ from app.database import get_db
 from app.models import Card, CardConcept, CardState, Concept, Deck, ImportJob, Section, User, utcnow
 from app.schemas import GenerateCardsRequest, GenerateCardsResponse, ImportJobProcessResponse, ImportJobRead, SectionRead
 from app.services.pdf_pipeline import PDFProcessingError, process_import_job
+from app.services.web_pipeline import WebProcessingError, process_url_into_sections
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
@@ -28,6 +30,11 @@ VALID_IMPORT_STATUSES = {
 class UpdateImportStatusRequest(BaseModel):
     status: str = Field(min_length=3, max_length=50)
     error_message: str | None = None
+
+class URLImportRequest(BaseModel):
+    user_id: str
+    deck_name: str
+    url: str
 
 
 @router.post("/pdf", response_model=ImportJobRead, status_code=202)
@@ -65,6 +72,58 @@ async def upload_pdf_import(
     db.commit()
     db.refresh(job)
     return job
+
+@router.post("/url", response_model=ImportJobRead, status_code=202)
+def upload_url_import(
+    payload: URLImportRequest,
+    db: Session = Depends(get_db),
+) -> ImportJob:
+    user = db.get(User, payload.user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    job = ImportJob(
+        user_id=payload.user_id,
+        deck_name=payload.deck_name.strip(),
+        source_filename=payload.url,
+        source_path=payload.url,
+        status="extracting",
+        extraction_method="web",
+    )
+    db.add(job)
+    db.flush()
+
+    try:
+        sections = process_url_into_sections(payload.url)
+        
+        embeddings_model = GoogleGenerativeAIEmbeddings(
+            model="models/text-embedding-004",
+            google_api_key=settings.gemini_api_key
+        )
+        texts_to_embed = [draft.title + "\n" + draft.content for draft in sections]
+        embeddings = embeddings_model.embed_documents(texts_to_embed)
+
+        for index, (draft, embedding) in enumerate(zip(sections, embeddings)):
+            db.add(
+                Section(
+                    import_job_id=job.id,
+                    title=draft.title[:255],
+                    order_index=index,
+                    content=draft.content,
+                    embedding=embedding,
+                )
+            )
+
+        job.status = "review_ready"
+        job.section_count = len(sections)
+        db.commit()
+        db.refresh(job)
+        return job
+    except WebProcessingError as exc:
+        job.status = "failed"
+        job.error_message = str(exc)
+        db.commit()
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/{job_id}", response_model=ImportJobRead)
