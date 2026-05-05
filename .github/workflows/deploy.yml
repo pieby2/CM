@@ -32,20 +32,28 @@ jobs:
           echo "Running tests..."
 
       - name: Authenticate with Google Cloud
+        if: ${{ secrets.GCP_CREDENTIALS != '' }}
         uses: google-github-actions/auth@v1
         with:
           credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
 
       - name: Configure Docker
+        if: ${{ secrets.GCP_CREDENTIALS != '' }}
         run: gcloud auth configure-docker gcr.io
 
       - name: Build and Push Docker Image
         run: |
           cd apps/api
-          docker build -t gcr.io/${{ secrets.GCP_PROJECT }}/cm-api:${{ github.sha }} .
-          docker push gcr.io/${{ secrets.GCP_PROJECT }}/cm-api:${{ github.sha }}
+          docker build -t gcr.io/cm-api-mock/cm-api:${{ github.sha }} .
+          if [ -n "${{ secrets.GCP_CREDENTIALS }}" ]; then
+            docker tag gcr.io/cm-api-mock/cm-api:${{ github.sha }} gcr.io/${{ secrets.GCP_PROJECT }}/cm-api:${{ github.sha }}
+            docker push gcr.io/${{ secrets.GCP_PROJECT }}/cm-api:${{ github.sha }}
+          else
+            echo "Skipping Docker push: GCP_CREDENTIALS secret not found."
+          fi
 
       - name: Deploy to Cloud Run
+        if: ${{ secrets.GCP_CREDENTIALS != '' }}
         uses: google-github-actions/deploy-cloudrun@v1
         with:
           service: cm-api
