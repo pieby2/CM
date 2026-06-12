@@ -121,7 +121,9 @@ export default function App() {
     setMessage(msg);
     setMsgType(type);
     if (msgTimeout.current) clearTimeout(msgTimeout.current);
-    msgTimeout.current = setTimeout(() => setMessage(""), 4000);
+    // Persist "waiting" messages (type="") longer so they don't vanish mid-load
+    const duration = type === "success" || type === "error" ? 4000 : 60000;
+    msgTimeout.current = setTimeout(() => setMessage(""), duration);
   }, []);
 
   // ── Confetti ─────────────────────────────────────────
@@ -203,12 +205,21 @@ export default function App() {
     e.preventDefault();
     if (!email.trim()) return;
     setBusy(true);
+    notify("Connecting to server…", "");
+
+    // Show a cold-start hint after 3 s so users know to wait
+    const coldStartTimer = setTimeout(() => {
+      notify("The server is waking up from sleep — this can take up to 30s on first load. Please wait…", "");
+    }, 3000);
+
     try {
       const u = await createUser(email.trim().toLowerCase());
+      clearTimeout(coldStartTimer);
       setUser(u);
       await refreshDecks(u.id);
       notify(`Welcome, ${u.email}!`, "success");
     } catch (err) {
+      clearTimeout(coldStartTimer);
       notify(err.message, "error");
     } finally {
       setBusy(false);
