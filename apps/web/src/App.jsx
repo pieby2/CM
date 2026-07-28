@@ -16,6 +16,7 @@ import {
   uploadPdf,
   getCardMnemonic,
   deckChat,
+  warmUpApi,
 } from "./api";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
@@ -57,6 +58,11 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [msgType, setMsgType] = useState("");
+
+  // Wake up the backend server immediately on app load (good for cold starts on free tiers)
+  useEffect(() => {
+    warmUpApi();
+  }, []);
 
   // Deck state
   const [decks, setDecks] = useState([]);

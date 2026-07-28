@@ -32,7 +32,7 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function warmUpApi() {
+export async function warmUpApi() {
   try {
     await fetch(API_HEALTH_URL, {
       method: "GET",

@@ -9,9 +9,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    database_url: str = "postgresql+psycopg2://cue:cue@localhost:5432/cue_math"
+    database_url: str = "sqlite:///./cue_math.db"
     db_connect_timeout_seconds: int = 8
-    redis_url: str = "redis://localhost:6379/0"
     storage_path: str = "./storage"
     cors_origins_raw: str = "http://localhost:5173,https://cue-math-web.onrender.com"
     default_due_limit: int = 30

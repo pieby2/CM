@@ -45,12 +45,25 @@ def _build_search_tool(db: Session) -> StructuredTool:
         """Searches the user's document for relevant information based on the query.
         Use this to answer questions about the study material."""
         query_embedding = embeddings.embed_query(query)
-        stmt = (
-            select(Section)
-            .order_by(Section.embedding.cosine_distance(query_embedding))
-            .limit(3)
-        )
-        results = db.execute(stmt).scalars().all()
+        
+        # In-memory cosine similarity (since we dropped pgvector)
+        def cosine_similarity(v1: list[float], v2: list[float]) -> float:
+            if not v1 or not v2: return -1.0
+            dot_product = sum(a * b for a, b in zip(v1, v2))
+            mag1 = sum(a * a for a in v1) ** 0.5
+            mag2 = sum(b * b for b in v2) ** 0.5
+            if mag1 * mag2 == 0: return 0.0
+            return dot_product / (mag1 * mag2)
+            
+        all_sections = db.execute(select(Section)).scalars().all()
+        scored_sections = []
+        for section in all_sections:
+            if section.embedding:
+                score = cosine_similarity(query_embedding, section.embedding)
+                scored_sections.append((score, section))
+                
+        scored_sections.sort(key=lambda x: x[0], reverse=True)
+        results = [s for score, s in scored_sections[:3]]
 
         if not results:
             return "No relevant information found in the document."

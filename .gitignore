@@ -17,3 +17,4 @@ dist/
 # Runtime artifacts
 storage/
 *.log
+*.db
